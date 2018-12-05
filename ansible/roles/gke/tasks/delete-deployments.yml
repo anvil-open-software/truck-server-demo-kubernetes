@@ -1,0 +1,8 @@
+# Copyright 2018 Dematic, Corp.
+# Licensed under the MIT Open Source License: https://opensource.org/licenses/MIT
+- name: "delete everything the cluster is about to go down"
+  command: "kubectl delete all --all"
+- command: "kubectl describe services"
+- command: "kubectl describe deployments"
+- command: "kubectl describe pods"
+

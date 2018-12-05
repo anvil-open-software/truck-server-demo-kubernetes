@@ -1,0 +1,15 @@
+# Copyright 2018 Dematic, Corp.
+# Licensed under the MIT Open Source License: https://opensource.org/licenses/MIT
+# create a cluster
+
+- command: "gcloud config set project {{gcp_project_id}}"
+- command: "gcloud config list"
+
+- name: "create GKE cluster {{gke_cluster_name}}"
+  command:  "gcloud container clusters create {{gke_cluster_name}}
+                 --num-nodes={{gke_init_num_nodes}}
+                 --machine-type={{gke_machine_type}}
+                 --network={{gke_network}} --subnetwork={{gke_subnet}} --zone={{gke_zone}}
+                 --service-account {{gcp_service_account}}
+                 --cluster-version {{gke_cluster_version}}"
+#                 --cluster-ipv4-cidr {{gke_cluster_ipv4_cidr}}"

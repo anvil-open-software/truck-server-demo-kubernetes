@@ -1,0 +1,4 @@
+{
+  "truck_server_url_count":   "/alerts/temperature/raise/count",
+  "truck_server_url_top_ten": "/alerts/temperature/raise/top-ten"
+}

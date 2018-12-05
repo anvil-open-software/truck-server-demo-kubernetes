@@ -1,0 +1,10 @@
+# Copyright 2018 Dematic, Corp.
+# Licensed under the MIT Open Source License: https://opensource.org/licenses/MIT
+# these IP addresses are to be valid in the cluster defined by jenkins_ci
+# select from the "ci k8s namespaces"
+
+gke_cluster_name: "truck-icd-regression"
+
+truck_ui_load_balancer_ip: "10.0.0.40"
+truck_ui_load_balancer_ip_de: "10.0.0.41"
+kafka_broker: "10.0.0.11:9092"

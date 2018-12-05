@@ -1,0 +1,57 @@
+# Copyright 2018 Dematic, Corp.
+# Licensed under the MIT Open Source License: https://opensource.org/licenses/MIT
+- hosts: localhost
+  become: no
+  vars:
+    helm_namespace: "{{ gke_cluster_profile | lower }}"
+
+  tasks:
+    - name: "include vars for {{ gke_cluster_profile }}"
+      include_vars: "{{ profile_vars_dir }}/{{ gke_cluster_profile }}"
+
+    - command: "gcloud config list"
+
+    - name: "check GKE cluster {{ gke_cluster_name }} exists"
+      command: "gcloud container clusters describe {{ gke_cluster_name }}  --zone {{ gke_zone }}"
+      register: cluster_exists
+      ignore_errors: yes
+
+    - name: "connect to gke cluster by getting credentials in order to do orderly shutdown"
+      command: "gcloud container clusters get-credentials {{ gke_cluster_name }}  --zone {{ gke_zone }}"
+      when: cluster_exists.rc==0
+
+    - block:
+      - block:
+        - name: "check release {{ helm_namespace }}-truck-alert-server exists"
+          command: "helm status {{ helm_namespace }}-truck-alert-server"
+          register: server_exists
+          ignore_errors: yes
+        - name: "delete release {{ helm_namespace }}-truck-alert-server"
+          command: "helm --debug delete --purge {{ helm_namespace }}-truck-alert-server"
+          when: server_exists.rc==0
+      - block:
+        - name: "check release {{ helm_namespace }}-truck-alert-ui exists"
+          command: "helm status {{ helm_namespace }}-truck-alert-ui"
+          register: ui_exists
+          ignore_errors: yes
+        - name: "delete release {{ helm_namespace }}-truck-alert-ui"
+          command: "helm --debug delete --purge {{ helm_namespace }}-truck-alert-ui"
+          when: ui_exists.rc==0
+      when: cluster_exists.rc==0 and (gke_delete_release or gke_delete_namespace or gke_delete_cluster)
+
+    - block:
+      - name: "check namespace {{ helm_namespace }} exists"
+        command: "kubectl get namespaces {{ helm_namespace }}"
+        register: namespace_exists
+        ignore_errors: yes
+      - name: "delete namespace {{ helm_namespace }}"
+        command: "kubectl delete namespace {{ helm_namespace }}"
+        when: namespace_exists.rc==0
+      when: cluster_exists.rc==0 and (gke_delete_namespace or gke_delete_cluster)
+
+    - block:
+      - name: "delete previous configurations to cleanup GCP resources"
+        include: tasks/delete-deployments.yml
+      - name: "delete GKE cluster {{ gke_cluster_name }}"
+        command: "gcloud container clusters delete {{ gke_cluster_name }} --quiet --zone={{ gke_zone }}"
+      when: cluster_exists.rc==0 and gke_delete_cluster

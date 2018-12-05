@@ -1,0 +1,117 @@
+# Copyright 2018 Dematic, Corp.
+# Licensed under the MIT Open Source License: https://opensource.org/licenses/MIT
+- hosts: localhost
+  become: no
+  vars:
+    repo_dir: "{{ template_transform_dir }}/helm_repo"
+    helm_namespace: "{{ gke_cluster_profile | lower }}"
+    ipmasq_ds_yml: "templates/truck_alert/ipmasq_ds.yml"
+    ipmasq_conf_template: "truck_alert/ipmasq_config.yml"
+    ipmasq_conf: "{{ template_transform_dir }}/{{ gke_cluster_profile }}_ipmasq_config.yml"
+    truck_alert_server_release: "{{ helm_namespace }}-truck-alert-server"
+    truck_alert_ui_release: "{{ helm_namespace }}-truck-alert-ui"
+    helm_values_template: "truck_alert/values.yml"
+    helm_values_yaml: "{{ template_transform_dir }}/{{ gke_cluster_profile }}_truck_alert_values.yml"
+    application_configmap: "application-configuration"
+    application_template: "truck_alert/application.conf"
+    application_conf: "{{ template_transform_dir }}/{{ gke_cluster_profile }}_truck_alert_application.conf"
+    logback_conf: "templates/truck_alert/logback.xml"
+    ui_configmap: "ui-configuration"
+    ui_config_global: "templates/truck_alert/config.global.json"
+    ui_config_prod_template: "truck_alert/config.prod.json"
+    ui_config_prod: "{{ template_transform_dir }}/{{ gke_cluster_profile }}_truck_alert_ui.conf"
+  tasks:
+  - name: "include vars for {{ gke_cluster_profile }}"
+    include_vars: "{{ profile_vars_dir }}/{{ gke_cluster_profile }}"
+
+  - name: "check GKE cluster {{ gke_cluster_name }} exists"
+    command: "gcloud container clusters describe {{ gke_cluster_name }} --zone {{ gke_zone }}"
+    register: cluster_exists
+    ignore_errors: yes
+
+  - block:
+    - include: tasks/gke-create-cluster.yml
+    when: cluster_exists.rc!=0
+
+  - name: "connect to gke cluster by getting credentials"
+    command: "gcloud container clusters get-credentials {{ gke_cluster_name }} --zone {{ gke_zone }}"
+
+  - name: "Get cluster status"
+    command: "kubectl cluster-info"
+
+  - name: "Add role for tiller"
+    shell: "kubectl create clusterrolebinding add-on-cluster-admin
+               --clusterrole=cluster-admin --serviceaccount=kube-system:default
+               --dry-run --output yaml --save-config
+            | kubectl apply -f -"
+
+  - name: "Install tiller"
+    command: "helm --debug init --upgrade --wait"
+
+  - name: "create-or-update namespace {{ helm_namespace }}"
+    shell: "kubectl create namespace {{ helm_namespace }}
+               --dry-run --output yaml --save-config
+            | kubectl apply -f -"
+
+  - name: "create {{ template_transform_dir }} transform directory"
+    file: path="{{ template_transform_dir }}" state=directory
+
+  - name: "Extract clusterIpv4Cidr"
+    shell: "gcloud container clusters describe {{ gke_cluster_name }} --zone {{ gke_zone }}
+               --format='csv[no-heading](clusterIpv4Cidr)'"
+    register: clusterIpv4CidrCmd
+  - set_fact: clusterIpv4Cidr="{{ clusterIpv4CidrCmd.stdout | trim }}"
+  - name: "Extract servicesIpv4Cidr"
+    shell: "gcloud container clusters describe {{ gke_cluster_name }} --zone {{ gke_zone }}
+               --format='csv[no-heading](servicesIpv4Cidr)'"
+    register: servicesIpv4CidrCmd
+  - set_fact: servicesIpv4Cidr="{{ servicesIpv4CidrCmd.stdout | trim }}"
+
+  - name: "Template {{ ipmasq_conf_template }}.j2 to {{ ipmasq_conf }}"
+    template: src="templates/{{ ipmasq_conf_template }}.j2" dest="{{ ipmasq_conf }}"
+
+  - name: "create-or-update configmap ip-masq-agent"
+    shell: "kubectl create configmap ip-masq-agent
+               --from-file=config={{ ipmasq_conf }}
+               --dry-run --output yaml --save-config
+            | kubectl apply --namespace=kube-system -f -"
+
+  - name: "create-or-update daemon set {{ ipmasq_ds_yml }}"
+    shell: "kubectl create -f {{ ipmasq_ds_yml }}
+               --dry-run --output yaml --save-config
+            | kubectl apply -f -"
+
+  - name: "Template {{ helm_values_template }}.j2 to {{ helm_values_yaml }}"
+    template: src="templates/{{ helm_values_template }}.j2" dest="{{ helm_values_yaml }}"
+
+  - name: "Template {{ application_template }}.j2 to {{ application_conf }}"
+    template: src="templates/{{ application_template }}.j2" dest="{{ application_conf }}"
+
+  - name: "create-or-update configmap {{ application_configmap }}"
+    shell: "kubectl create configmap {{ application_configmap }}
+               --from-file=application.conf={{ application_conf }} --from-file=logback.xml={{ logback_conf }}
+               --dry-run --output yaml --save-config
+            | kubectl apply --namespace={{ helm_namespace }} -f -"
+
+  - name: "Template {{ ui_config_prod_template }}.j2 to {{ ui_config_prod }}"
+    template: src="templates/{{ ui_config_prod_template }}.j2" dest="{{ ui_config_prod }}"
+
+  - name: "create-or-update configmap {{ ui_configmap }}"
+    shell: "kubectl create configmap {{ ui_configmap }}
+               --from-file=config.prod.json={{ ui_config_prod }} --from-file=config.global.json={{ ui_config_global }}
+               --dry-run --output yaml --save-config
+            | kubectl apply --namespace={{ helm_namespace }} -f -"
+
+  - name: "create {{ repo_dir }} directory"
+    file: path="{{ repo_dir }}" state=directory
+
+  - name: "sync helm repo"
+    shell: "gsutil -m rsync -d -r {{ helm_repo_url }} {{ repo_dir }}"
+
+  - name: "install {{ truck_alert_server_release }}"
+    shell: "helm --debug upgrade --values {{ helm_values_yaml }} --namespace={{ helm_namespace }}
+               --install {{ truck_alert_server_release }} {{ repo_dir }}/truck-alert-server-{{ truck_alert_server_version }}.tgz"
+
+  - name: "install {{ truck_alert_ui_release }}"
+    shell: "helm --debug upgrade --values {{ helm_values_yaml }} --namespace={{ helm_namespace }}
+               --install {{ truck_alert_ui_release }} {{ repo_dir }}/truck-alert-ui-{{ truck_alert_ui_version }}.tgz"

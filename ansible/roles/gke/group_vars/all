@@ -1,0 +1,29 @@
+# Copyright 2018 Dematic, Corp.
+# Licensed under the MIT Open Source License: https://opensource.org/licenses/MIT
+gcp_project_id: dlabs
+gcp_boot_disk_type: "pd-ssd"
+gke_init_num_nodes: 2
+
+# use ansible-automation for now, but need tighter role
+gcp_service_account_name: "ansible-automation"
+gcp_service_account: "{{gcp_service_account_name}}@dlabs.iam.gserviceaccount.com"
+gcp_scopes: "https://www.googleapis.com/auth/cloud-platform"
+
+gke_network: "dlabs"
+gke_subnet: "dlabs-us-central1"
+gke_zone: "us-central1-c"
+gke_machine_type: n1-standard-4
+
+gke_cluster_version: "1.10"
+
+# must be unique to GCP network
+gke_cluster_ipv4_cidr: "10.0.0.0/23"
+
+# normally configs would be outside this project different configs can be used
+# placed here locally with playbook for Denis's convenience
+profile_vars_dir: profile_vars
+
+# transform local directory for mysql directory name
+template_transform_dir: "scratch"
+
+helm_repo_url: gs://us.artifacts.dlabs.appspot.com/charts/
